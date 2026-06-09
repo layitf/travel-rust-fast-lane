@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "configurations": [
+    {
+      "name": "run",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo run"
+    }
+  ]
+}
