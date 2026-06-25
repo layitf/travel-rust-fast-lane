@@ -10,8 +10,10 @@ pub struct Config {
     pub proxy_port: u16,
     /// IP 缓存 TTL（秒）
     pub cache_ttl_secs: u64,
-    /// 后台测速间隔（秒）
-    pub speed_test_interval_secs: u64,
+    /// 后台刷新间隔（秒），0 表示禁用
+    pub background_refresh_interval_secs: u64,
+    /// 测速超时时间（秒）
+    pub speed_test_timeout_secs: u64,
     /// 需要加速的域名列表
     pub accelerated_domains: Vec<String>,
 }
@@ -21,8 +23,9 @@ impl Default for Config {
         Self {
             proxy_addr: "127.0.0.1".to_string(),
             proxy_port: 1080,
-            cache_ttl_secs: 300,      // 5 分钟
-            speed_test_interval_secs: 60, // 1 分钟
+            cache_ttl_secs: 300,        // 5 分钟
+            background_refresh_interval_secs: 0, // 1 分钟，默认开启
+            speed_test_timeout_secs: 2,  // 2 秒超时
             accelerated_domains: vec![
                 "github.com".to_string(),
                 "raw.githubusercontent.com".to_string(),

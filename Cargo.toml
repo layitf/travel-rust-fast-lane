@@ -16,8 +16,8 @@ tower-http = { version = "0.5", features = ["trace"] }
 reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"] }
 
 # DNS 解析（trust-dns-proto 更新为 hickory-proto）
-hickory-proto = "0.24"
-hickory-resolver = "0.24"
+dns-lookup = "2.0"
+futures = "0.3"
 
 # 并发缓存
 dashmap = "6.2.1"

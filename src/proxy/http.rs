@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     body::Body,
@@ -13,6 +14,7 @@ use http::{HeaderMap, Method, StatusCode, Uri};
 use tracing::{debug, error, info, warn};
 
 use crate::cache::IpCache;
+use crate::speedtest;
 use crate::Config;
 
 #[derive(Clone)]
@@ -44,7 +46,7 @@ pub async fn run_proxy(config: Config, cache: IpCache) -> anyhow::Result<()> {
     // cache.put("github.com", "20.27.177.113", 120);
     // info!("已预填充缓存测试数据");
     // =====================================
-    
+
     // 关键：使用 `into_make_service_with_connect_info` 来获取客户端地址
     let app = Router::new()
         .route("/", get(|| async { "FastLane Proxy Running" }))
@@ -102,23 +104,83 @@ async fn proxy_handler(
         .iter()
         .any(|d| host.ends_with(d));
 
-    // 3. 确定目标 IP/域名
-    let (target_host, used_cache) = if should_accelerate {
-        if let Some(cached_ip) = ctx.cache.get(&host) {
-            info!("缓存命中: {} -> {}", host, cached_ip);
-            (cached_ip, true)
+    // 3. 确定目标 IP/域名（集成可用性验证）
+    let (target_host, used_cache, from_cache) = if should_accelerate {
+        // 尝试从缓存获取条目（包含延迟信息）
+        if let Some(entry) = ctx.cache.get_entry(&host) {
+            // 缓存命中，验证 IP 是否仍可达
+            let port = 80;
+            let timeout = Duration::from_secs(2);
+            let ip = entry.ip.clone();
+
+            // 进行轻量级 TCP 握手验证
+            match tokio::time::timeout(
+                timeout,
+                tokio::net::TcpStream::connect(format!("{}:{}", ip, port)),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    // IP 仍然可达，使用缓存
+                    info!(
+                        "缓存命中且验证通过: {} -> {} ({}ms)",
+                        host, ip, entry.latency
+                    );
+                    (ip, true, true)
+                }
+                _ => {
+                    // IP 不可达，移除缓存，触发重新测速
+                    warn!("缓存 IP 不可达，移除并重新测速: {} -> {}", host, ip);
+                    ctx.cache.remove(&host);
+
+                    // 触发测速
+                    info!("开始重新测速: {}", host);
+                    let port = 80;
+                    let timeout = Duration::from_secs(2);
+                    if let Some((new_ip, rtt)) =
+                        speedtest::find_fastest_ip(&host, port, timeout).await
+                    {
+                        ctx.cache
+                            .set(host.clone(), new_ip.to_string(), rtt.as_millis() as u32);
+                        info!(
+                            "重新测速完成: {} -> {} ({}ms)",
+                            host,
+                            new_ip,
+                            rtt.as_millis()
+                        );
+                        (new_ip.to_string(), true, false)
+                    } else {
+                        warn!("重新测速失败，使用原始域名直连: {}", host);
+                        (host.clone(), false, false)
+                    }
+                }
+            }
         } else {
-            warn!("缓存未命中: {}，使用原始域名直连", host);
-            (host.clone(), false)
+            // 缓存未命中，触发测速
+            info!("缓存未命中，开始测速: {}", host);
+            let port = 80;
+            let timeout = Duration::from_secs(2);
+            if let Some((ip, rtt)) = speedtest::find_fastest_ip(&host, port, timeout).await {
+                ctx.cache
+                    .set(host.clone(), ip.to_string(), rtt.as_millis() as u32);
+                info!("测速完成: {} -> {} ({}ms)", host, ip, rtt.as_millis());
+                (ip.to_string(), true, false)
+            } else {
+                warn!("测速失败，使用原始域名直连: {}", host);
+                (host.clone(), false, false)
+            }
         }
     } else {
-        (host.clone(), false)
+        (host.clone(), false, false)
     };
 
     // 4. 构建目标 URL
     let scheme = "http";
     let target_url = format!("{}://{}{}", scheme, target_host, path_and_query);
-    debug!("转发到: {} (使用缓存: {})", target_url, used_cache);
+    debug!(
+        "转发到: {} (使用缓存: {}, 来自缓存: {})",
+        target_url, used_cache, from_cache
+    );
 
     // 5. 构建 reqwest 请求
     let req_method = match method.as_str() {
