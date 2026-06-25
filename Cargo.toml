@@ -1,19 +1,23 @@
 [package]
 name = "fast-lane"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 # 异步运行时
 tokio = { version = "1.35", features = ["full"] }
 
-# HTTP 代理服务器
-hyper = { version = "1.10.1", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
-http-body-util = "0.1"
+# Web 框架（使用 0.7 稳定版本）
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace"] }
 
 # HTTP 客户端（用于测速）
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
+reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"] }
+
+# DNS 解析（trust-dns-proto 更新为 hickory-proto）
+hickory-proto = "0.24"
+hickory-resolver = "0.24"
 
 # 并发缓存
 dashmap = "6.2.1"
@@ -26,17 +30,22 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
-# 命令行参数解析（GUI 之前先用命令行）
+# 命令行
 clap = { version = "4.4", features = ["derive"] }
 
-# 配置文件（TOML格式）
+# 配置
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "1.1.2+spec-1.1.0"
+toml = "1.1.2"
 
 # 错误处理
 anyhow = "1.0"
 thiserror = "2.0.18"
 
-# 系统托盘和 GUI
-tauri = { version = "2.11.2", features = ["custom-protocol", "tray-icon", "devtools", "rustls-tls"] }
+# 系统目录
+dirs = "6.0"
+
+# HTTP 类型
+http = "1.1"
+http-body-util = "0.1"
+bytes = "1.5"
