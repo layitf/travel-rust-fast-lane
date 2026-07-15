@@ -7,10 +7,18 @@ edition = "2021"
 # 异步运行时
 tokio = { version = "1.35", features = ["full"] }
 
-# Web 框架（使用 0.7 稳定版本）
-axum = "0.7"
+# Web 框架（使用 0.7 稳定版本） # 使用原生 hyper 替换 axum 实现
+# axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
+
+# HTTP 类型
+hyper = { version = "1.6.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.2", features = ["server", "tokio"] }
+http = "1.2.0"
+http-body = "1.0.0"
+http-body-util = "0.1.0"
+bytes = "1.5"
 
 # HTTP 客户端（用于测速）
 reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"] }
@@ -44,8 +52,3 @@ thiserror = "2.0.18"
 
 # 系统目录
 dirs = "6.0"
-
-# HTTP 类型
-http = "1.1"
-http-body-util = "0.1"
-bytes = "1.5"

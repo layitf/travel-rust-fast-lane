@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cache;
