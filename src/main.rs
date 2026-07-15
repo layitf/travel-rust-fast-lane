@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cache;
@@ -24,6 +24,11 @@ struct Cli {
     /// 清空缓存
     #[arg(long)]
     clear_cache: bool,
+
+    // clap 的 #[arg(long)] 属性会自动将字段名 reset_config 转换为命令行参数 --reset-config（下划线变横杠）
+    /// 重置配置文件为默认值
+    #[arg(long)]
+    reset_config: bool,
 }
 
 #[tokio::main]
@@ -38,10 +43,19 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    // 加载配置
+    // 重置配置文件, 命令行强制重置 fast-lane.exe --reset-config 或 ./fast-lane --reset-config
+    if cli.reset_config {
+        let config = Config::default();
+        config.save()?;
+        info!("配置文件已重置为默认值");
+        return Ok(());
+    }
+
+    // 加载配置（自动补全缺失字段）
     let config = Config::load()?;
 
     if cli.show_config {
+        println!("当前配置:");
         println!("{:#?}", config);
         return Ok(());
     }
@@ -62,11 +76,16 @@ async fn main() -> anyhow::Result<()> {
     // cache.put("github.com", "20.27.177.113", 120);
     // =====================================
 
-    info!("FastLane 启动");
+    info!("FastLane 启动 v{}", env!("CARGO_PKG_VERSION"));
     info!("代理地址: {}", config.proxy_address());
     info!("缓存 TTL: {} 秒", config.cache_ttl_secs);
     // 配置文件路径 C:\Users\user\AppData\Roaming\fastlane\config.toml，如果有，不会再新的
+    info!(
+        "后台刷新间隔: {} 秒",
+        config.background_refresh_interval_secs
+    );
     info!("加速域名: {:?}", config.accelerated_domains);
+    info!("X-Forwarded-For: {}", config.add_x_forwarded_for);
 
     // ========== 启动后台刷新任务 ==========
     let refresh_interval = config.background_refresh_interval_secs;

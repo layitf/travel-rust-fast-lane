@@ -18,7 +18,7 @@ curl http://127.0.0.1:1080/
 curl http://127.0.0.1:1080/health
 # 输出: OK
 
-# 正常访问  # 部分情况服务繁忙 503，过段时间重试
+# 正常访问  # 部分情况服务繁忙 503，过段时间重试，curl 默认是直连，不会通过任何代理，需要指定 -x 参数
 curl http://httpbin.org/ip
 # { origin:'xx.xx.x.x'}
 

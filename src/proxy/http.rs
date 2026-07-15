@@ -84,7 +84,7 @@ async fn proxy_handler(
     axum::extract::State(ctx): axum::extract::State<ProxyContext>,
     body: Bytes,
 ) -> Response {
-    println!("!!! 请求到达 proxy_handler !!!");
+    println!("{} {} (来自: {})", method, uri, addr);
     debug!("代理请求: {} {} (来自: {})", method, uri, addr);
 
     // 1. 提取目标域名和路径
@@ -213,8 +213,10 @@ async fn proxy_handler(
     }
 
     // 8. 添加代理相关信息
-    req_builder = req_builder.header("X-Forwarded-For", addr.ip().to_string());
-    req_builder = req_builder.header("X-Forwarded-Proto", "http");
+    if ctx.config.add_x_forwarded_for {
+        req_builder = req_builder.header("X-Forwarded-For", addr.ip().to_string());
+        req_builder = req_builder.header("X-Forwarded-Proto", "http");
+    }
 
     // 9. 设置请求体
     if !body.is_empty() {
