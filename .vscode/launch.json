@@ -5,7 +5,16 @@
       "name": "run",
       "type": "node-terminal",
       "request": "launch",
-      "command": "cargo run"
+      "command": "cargo run",
+    },
+    {
+      "name": "run-debug",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo run",
+      "env": {
+        "RUST_LOG": "debug"
+      }
     }
   ]
 }

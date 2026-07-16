@@ -13,8 +13,8 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
 
 # HTTP 类型
-hyper = { version = "1.6.0", features = ["server", "http1"] }
-hyper-util = { version = "0.1.2", features = ["server", "tokio"] }
+hyper = "1.6.0"
+hyper-util = { version = "0.1.2", features = ["server", "tokio", "http1"] }
 http = "1.2.0"
 http-body = "1.0.0"
 http-body-util = "0.1.0"

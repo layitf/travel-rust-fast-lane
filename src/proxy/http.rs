@@ -3,13 +3,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use http::{Method, Request, Response, StatusCode};
-use http_body_util::{BodyExt, Full};
+use http::{HeaderMap, Method, Request, Response, StatusCode, Uri};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info, warn};
 
@@ -92,7 +92,11 @@ pub async fn run_proxy(config: Config, cache: IpCache) -> anyhow::Result<()> {
             });
 
             // 使用 serve_connection 并处理结果
-            if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+            if let Err(e) = http1::Builder::new()
+.serve_connection(io, service)
+                .with_upgrades() // ← 关键：启用升级支持
+.await
+{
                 error!("连接处理错误 [{}]: {}", remote_addr, e);
             }
         });
@@ -121,13 +125,13 @@ async fn handle_request(
     handle_http(req, ctx, client_addr).await
 }
 
-/// 处理 CONNECT 请求（HTTPS 隧道）
+/// 处理 CONNECT 请求 - 完整的双向隧道转发
 async fn handle_connect(
-    req: Request<Incoming>,
+mut req: Request<Incoming>,
     ctx: ProxyContext,
     client_addr: SocketAddr,
 ) -> Result<Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
-    // 解析目标：CONNECT github.com:443
+    // 解析目标
     let authority = req
         .uri()
         .authority()
@@ -221,7 +225,7 @@ async fn handle_connect(
     };
 
     // ============ 建立到目标服务器的连接 ============
-    let mut target_stream = TcpStream::connect(&target_addr).await.map_err(|e| {
+    let target_stream = TcpStream::connect(&target_addr).await.map_err(|e| {
         ProxyError::new(StatusCode::BAD_GATEWAY, format!("Connection failed: {}", e))
     })?;
 
@@ -231,26 +235,50 @@ async fn handle_connect(
 
     info!("CONNECT 隧道建立: {} -> {}", host, target_addr);
 
-    // TODO: 实现双向隧道转发
-    // 注意：这里我们需要在响应发送后继续转发数据
-    // 但 hyper 的 serve_connection 会处理这个
-    // 我们需要使用 hyper 的 upgrade 机制
+    // ============ 关键：使用 hyper 的 upgrade 机制 ============
+    // 发送 200 响应，并准备升级连接
+    let mut response = Response::new(Full::new(Bytes::new()));
+    *response.status_mut() = StatusCode::OK;
 
-    // 由于 upgrade 需要更复杂的处理，我们暂时返回 200
-    // 实际隧道转发需要 hyper 的 upgrade 支持
-    // 目前只返回 200 Connection Established
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .body(Full::new(Bytes::new()))
-        .map_err(|e| {
-            ProxyError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Response error: {}", e),
-            )
-        })?;
+    // 启用升级
+    tokio::task::spawn(async move {
+        // 等待升级完成，获取客户端的底层流
+        match hyper::upgrade::on(&mut req).await {
+            Ok(upgraded) => {
+                info!("CONNECT 升级成功，开始双向转发: {}", target_addr);
+                let client_io = TokioIo::new(upgraded);
+                // 在客户端流和目标流之间双向转发数据
+                if let Err(e) = tunnel(client_io, target_stream).await {
+                    error!("隧道转发错误: {}", e);
+                }
+                info!("CONNECT 隧道关闭: {}", target_addr);
+            }
+            Err(e) => {
+                error!("CONNECT 升级失败: {}", e);
+            }
+        }
+    });
 
-    warn!("CONNECT 隧道暂未实现数据转发（仅返回 200）");
     Ok(response)
+}
+
+/// 双向隧道转发 - 在客户端和目标之间复制数据
+async fn tunnel<C>(
+    mut client: C,
+    mut target: TcpStream,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    // C: tokio::io::AsyncBufRead + tokio::io::AsyncWrite + Unpin,
+    C: AsyncRead + AsyncWrite + Unpin,
+{
+    // 使用 tokio::io::copy_bidirectional 进行双向复制
+    // 它会在两个流之间双向传输数据，直到其中一端关闭
+    let result = tokio::io::copy_bidirectional(&mut client, &mut target).await?;
+    debug!(
+        "隧道转发结束: 客户端→目标 {} 字节, 目标→客户端 {} 字节",
+        result.0, result.1
+    );
+    Ok(())
 }
 
 /// 处理普通 HTTP 请求
