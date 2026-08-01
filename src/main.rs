@@ -1,16 +1,21 @@
 use std::time::Duration;
 
 use clap::Parser;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cache;
 mod config;
+mod control_api;
 mod proxy;
+mod proxy_control;
 mod speedtest;
 
 use cache::IpCache;
 use config::Config;
+use control_api::{run_control_api, ControlState};
 
 /// FastLane - 智能网络加速工具
 #[derive(Parser)]
@@ -29,6 +34,14 @@ struct Cli {
     /// 重置配置文件为默认值
     #[arg(long)]
     reset_config: bool,
+
+    /// 自动设置系统代理（运行即代理）
+    #[arg(short = 'a', long)]
+    auto_proxy: bool,
+
+    /// 取消系统代理设置
+    #[arg(long)]
+    unset_proxy: bool,
 }
 
 #[tokio::main]
@@ -59,6 +72,53 @@ async fn main() -> anyhow::Result<()> {
         println!("{:#?}", config);
         return Ok(());
     }
+
+    if cli.unset_proxy {
+        proxy_control::disable_proxy()?;
+        info!("已取消系统代理");
+        return Ok(());
+    }
+
+    if cli.auto_proxy {
+        // 注册退出钩子
+        tokio::spawn(async {
+            tokio::signal::ctrl_c().await.ok();
+            info!("收到退出信号，恢复代理设置...");
+            let _ = proxy_control::disable_proxy();
+            std::process::exit(0);
+        });
+        info!("正在自动设置系统代理...");
+        match proxy_control::enable_proxy(config.proxy_port) {
+            Ok(_) => {
+                info!("系统代理已设置为 127.0.0.1:{}", config.proxy_port);
+            }
+            Err(e) => {
+                tracing::warn!("自动设置系统代理失败: {}", e);
+                tracing::warn!("请以管理员身份运行，或手动配置代理");
+            }
+        }
+    } else {
+        info!("未启用自动代理（使用 -a 或 --auto-proxy 开启）");
+    }
+
+    // 创建控制状态
+    // let control_state = ControlState::new(true);
+    // let control_state = ControlState {
+    //     proxy_enabled: Arc::new(Mutex::new(true)),
+    // };
+    let control_state = ControlState::new(cli.auto_proxy);
+
+    // 启动控制 API（用于运行时开关）
+    let state_clone = control_state.clone();
+    tokio::spawn(async {
+        if let Err(e) = control_api::run_control_api(1081, state_clone).await {
+            tracing::error!("控制 API 启动失败: {}", e);
+        }
+    });
+
+    info!("控制 API 地址: http://127.0.0.1:1081");
+    info!("  GET /status  - 查看代理状态");
+    info!("  POST /set    - 设置代理状态 ({{\"enabled\": true/false}})");
 
     // 创建 IP 缓存
     let cache = IpCache::new(Duration::from_secs(config.cache_ttl_secs));

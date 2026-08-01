@@ -5,7 +5,13 @@
       "name": "run",
       "type": "node-terminal",
       "request": "launch",
-      "command": "cargo run",
+      "command": "cargo run"
+    },
+    {
+      "name": "run-proxy",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo run -- -a"
     },
     {
       "name": "run-debug",

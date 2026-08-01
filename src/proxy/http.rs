@@ -93,10 +93,10 @@ pub async fn run_proxy(config: Config, cache: IpCache) -> anyhow::Result<()> {
 
             // 使用 serve_connection 并处理结果
             if let Err(e) = http1::Builder::new()
-.serve_connection(io, service)
+                .serve_connection(io, service)
                 .with_upgrades() // ← 关键：启用升级支持
-.await
-{
+                .await
+            {
                 error!("连接处理错误 [{}]: {}", remote_addr, e);
             }
         });
@@ -127,7 +127,7 @@ async fn handle_request(
 
 /// 处理 CONNECT 请求 - 完整的双向隧道转发
 async fn handle_connect(
-mut req: Request<Incoming>,
+    mut req: Request<Incoming>,
     ctx: ProxyContext,
     client_addr: SocketAddr,
 ) -> Result<Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
